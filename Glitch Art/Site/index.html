@@ -220,7 +220,7 @@
             const extension = mimeType.split('/')[1]; // ex: jpeg
 
             const link = document.createElement('a');
-            link.download = `glitch_art.${extension}`;
+            link.download = `GlitchPicture-app.${extension}`;
             link.href = canvas.toDataURL(mimeType, 0.9); // 0.9 = qualité pour JPEG/WEBP
             link.click();
         }
