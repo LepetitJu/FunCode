@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Sandboxels 2026 Edition - Pushing Thru</title>
+    <style>
+        body {
+            background-color: #0c0c0e;
+            color: #e4e4e7;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 10px;
+        }
+        h1 { margin: 5px 0 0 0; font-size: 24px; color: #fff; }
+        .stats { font-size: 12px; color: #a1a1aa; margin-bottom: 10px; font-family: monospace; }
+        canvas {
+            border: 4px solid #27272a;
+            background-color: #000;
+            cursor: crosshair;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+            image-rendering: pixelated;
+        }
+        .controls {
+            margin-top: 12px;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 6px;
+            max-width: 650px;
+            width: 100%;
+        }
+        button {
+            padding: 8px;
+            font-size: 11px;
+            cursor: pointer;
+            border: 1px solid #3f3f46;
+            border-radius: 6px;
+            background-color: #18181b;
+            color: #d4d4d8;
+            text-align: left;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.15s;
+        }
+        button:hover { background-color: #27272a; border-color: #52525b; }
+        button.active {
+            background-color: #27272a;
+            border-color: #f4f4f5;
+            color: #fff;
+            font-weight: bold;
+        }
+        .dot { width: 10px; height: 10px; border-radius: 2px; }
+    </style>
+</head>
+<body>
+
+    <h1>Sandboxels : Pushing Thru 🧪</h1>
+    <div class="stats" id="statsBar">Pxls: 0 | Ticks: 0 | Temp: 20°C</div>
+    
+    <canvas id="boxCanvas" width="160" height="160" style="width: 520px; height: 520px;"></canvas>
+    
+    <div class="controls" id="menu"></div>
+
+<script>
+const canvas = document.getElementById('boxCanvas');
+const ctx = canvas.getContext('2d');
+const width = canvas.width;
+const height = canvas.height;
+
+// --- VARIABLES SIMULATION ET SETTINGS (Changelog 1.14) ---
+let ticks = 0;
+const ROOM_TEMP = 20;
+const HEAT_LOSS_RATE = 0.05; // Les pixels perdent ou gagnent de la chaleur vers ROOM_TEMP
+
+// CONFIGURATION ULTRA-COMPLÈTE DES ÉLÉMENTS (11 Catégories + Mises à jour)
+const ELEMENTS = {
+    0:  { name: "Gomme",       cat: "Special",  color: [0,0,0],       type: "empty",   density: 0,   conduct: false },
+    1:  { name: "Sable",       cat: "Land",     color: [235,195,115], type: "powder",  density: 5,   conduct: false },
+    2:  { name: "Eau",         cat: "Liquids",  color: [35,120,235],  type: "liquid",  density: 3,   conduct: true  },
+    3:  { name: "Poudre Canon",cat: "Powders",  color: [90,95,100],   type: "powder",  density: 4,   conduct: true  },
+    4:  { name: "Bois",        cat: "Solids",   color: [115,75,35],   type: "solid",   density: 10,  conduct: false },
+    5:  { name: "Plante",      cat: "Life",     color: [45,185,75],   type: "solid",   density: 9,   conduct: false },
+    6:  { name: "Humain",      cat: "Life",     color: [230,160,140], type: "human",   density: 3.5, conduct: true  },
+    7:  { name: "Électricité", cat: "Energy",   color: [255,240,50],  type: "energy",  density: -5,  conduct: true  },
+    8:  { name: "Pusher",      cat: "Machines", color: [160,80,220],  type: "solid",   density: 15,  conduct: true  },
+    9:  { name: "Vapeur",      cat: "Gases",    color: [180,185,200], type: "gas",     density: -1,  conduct: false },
+    10: { name: "Pâte",        cat: "Food",     color: [240,215,170], type: "liquid",  density: 4.5, conduct: false },
+    11: { name: "Uranium",     cat: "Weapons",  color: [50,240,50],   type: "solid",   density: 20,  conduct: true  },
+    12: { name: "Fil Cuivre",  cat: "Machines", color: [185,100,65],  type: "solid",   density: 12,  conduct: true  },
+    13: { name: "Gelée Grise", cat: "Special",  color: [130,130,140], type: "powder",  density: 6,   conduct: false },
+    14: { name: "Antimatière", cat: "Special",  color: [255,50,255],  type: "gas",     density: -3,  conduct: false },
+    // Éléments secondaires / Réactions
+    15: { name: "Verre",       cat: "Produit",  color: [170,230,245], type: "solid",   density: 11,  conduct: false },
+    16: { name: "Feu",         cat: "Produit",  color: [255,100,0],    type: "gas",     density: -2,  conduct: false },
+    17: { name: "Fumée",       cat: "Produit",  color: [70,70,75],    type: "gas",     density: -1.5,conduct: false },
+    18: { name: "Gâteau",      cat: "Produit",  color: [130,85,55],   type: "solid",   density: 8,   conduct: false },
+    19: { name: "Gate Élec",   cat: "Machines", color: [80,100,120],  type: "solid",   density: 13,  conduct: true  }
+};
+
+// Grille de structures d'objets pour intégrer la physique avancée (Changelog 1.13/1.14)
+// Propriétés : id, charge (elec), temp (chaleur), life (durée), group (ID de relation)
+let grid = Array(width).fill().map(() => Array(height).fill(null).map(() => ({ id: 0, charge: 0, temp: ROOM_TEMP, life: 0, group: 0 })));
+let currentElement = 1;
+let isDrawing = false;
+let groupCounter = 1;
+
+// --- INTERFACE UTISATEUR ---
+const menu = document.getElementById('menu');
+Object.keys(ELEMENTS).forEach(id => {
+    if (id > 14) return; // Uniquement notre sélection d'éléments principaux
+    const btn = document.createElement('button');
+    btn.id = `btn-${id}`;
+    if (id == currentElement) btn.classList.add('active');
+    
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.backgroundColor = `rgb(${ELEMENTS[id].color.join(',')})`;
+    
+    const label = document.createElement('span');
+    label.innerText = ELEMENTS[id].name;
+    
+    btn.appendChild(dot);
+    btn.appendChild(label);
+    btn.onclick = () => {
+        currentElement = parseInt(id);
+        document.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+    };
+    menu.appendChild(btn);
+});
+
+// Échange de pixels sécurisé
+function swap(x1, y1, x2, y2, nextGrid) {
+    let temp = nextGrid[x1][y1];
+    nextGrid[x1][y1] = nextGrid[x2][y2];
+    nextGrid[x2][y2] = temp;
+}
+
+// --- BULK MOVEMENT: SYSTÈME DE GROUPES / PUSHERS (Changelog 1.13 & 1.14) ---
+function pushGroup(groupId, dx, dy, nextGrid) {
+    if (groupId === 0) return;
+    let pixelsInGroup = [];
+    
+    // Étape 1 : Trouver tous les membres du groupe
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            if (grid[x][y].group === groupId) {
+                pixelsInGroup.push({x, y, cell: {...nextGrid[x][y]}});
+            }
+        }
+    }
+    
+    // Étape 2 : Vérifier les collisions globales du groupe vers sa trajectoire
+    let canMove = true;
+    for (let p of pixelsInGroup) {
+        let nx = p.x + dx;
+        let ny = p.y + dy;
+        if (nx < 0 || nx >= width || ny < 0 || ny >= height) { canMove = false; break; }
+        let targetCell = grid[nx][ny];
+        if (targetCell.id !== 0 && targetCell.group !== groupId && ELEMENTS[targetCell.id].type === "solid") {
+            canMove = false; 
+            break;
+        }
+    }
+    
+    // Étape 3 : Effectuer le déplacement global du bloc rigide
+    if (canMove) {
+        // Vider les anciennes positions
+        for (let p of pixelsInGroup) {
+            nextGrid[p.x][p.y] = { id: 0, charge: 0, temp: ROOM_TEMP, life: 0, group: 0 };
+        }
+        // Écrire aux nouvelles positions
+        for (let p of pixelsInGroup) {
+            nextGrid[p.x + dx][p.y + dy] = p.cell;
+        }
+    }
+}
+
+// --- MOTEUR DE PHYSIQUE GENERALE ---
+function updatePhysics() {
+    ticks++;
+    let nextGrid = Array(width).fill().map((_, x) => Array(height).fill(null).map((_, y) => ({...grid[x][y]})));
+    let activePixels = 0;
+
+    for (let y = height - 1; y >= 0; y--) {
+        for (let x = 0; x < width; x++) {
+            let cell = grid[x][y];
+            if (cell.id === 0) continue;
+            activePixels++;
+
+            let prop = ELEMENTS[cell.id];
+            let dir = Math.random() < 0.5 ? -1 : 1;
+
+            // --- SETTING: HEAT LOSS CONFIG (Changelog 1.14) ---
+            if (cell.temp !== ROOM_TEMP) {
+                nextGrid[x][y].temp += (ROOM_TEMP - cell.temp) * HEAT_LOSS_RATE;
+            }
+
+            // --- SYSTÈME ÉLECTRIQUE ET ETAT (Changelog 1.13) ---
+            if (cell.charge > 0) {
+                nextGrid[x][y].charge = Math.max(0, cell.charge - 1);
+                
+                // Propagation
+                let neighbors = [[x+1,y], [x-1,y], [x,y+1], [x,y-1]];
+                for (let [nx, ny] of neighbors) {
+                    if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                        let target = grid[nx][ny];
+                        if (ELEMENTS[target.id].conduct && target.charge === 0) {
+                            nextGrid[nx][ny].charge = 5;
+                        }
+                    }
+                }
+            }
+
+            // --- RÉACTIONS CHIMIQUES & MAGIQUES (Changelog 1.14) ---
+            
+            // PUSHER ACTIVÉ PAR ÉLECTRICITÉ (Changelog 1.14)
+            if (cell.id === 8 && cell.charge > 0) {
+                // S'il est chargé, il pousse les blocs au-dessus de lui de 1 pixel
+                if (y - 1 >= 0 && grid[x][y-1].group !== 0) {
+                    pushGroup(grid[x][y-1].group, 0, -1, nextGrid);
+                }
+            }
+
+            // ANTIMATIÈRE (Changelog 1.14) : Éradication totale
+            if (cell.id === 14) {
+                let targets = [[x+1,y], [x-1,y], [x,y+1], [x,y-1], [x,y+1]];
+                for (let [nx, ny] of targets) {
+                    if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                        let tid = grid[nx][ny].id;
+                        if (tid !== 0 && tid !== 14) { // Tout s'annihile en flash de feu/fumée
+                            nextGrid[x][y] = { id: 17, charge: 0, temp: 100, life: 10, group: 0 };
+                            nextGrid[nx][ny] = { id: 0, charge: 0, temp: ROOM_TEMP, life: 0, group: 0 };
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // COURIER DU FEU ET THERMODYNAMIQUE (Changelog 1.14)
+            if (cell.id === 16 || cell.temp > 120) { // Si un pixel est en feu ou surchauffé
+                let targets = [[x+1,y], [x-1,y], [x,y+1], [x,y-1]];
+                for (let [nx, ny] of targets) {
+                    if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                        let tid = grid[nx][ny].id;
+                        if (tid === 1) nextGrid[nx][ny] = { id: 15, charge: 0, temp: 400, life: 0, group: 0 }; // Sable -> Verre
+                        if (tid === 3) nextGrid[nx][ny] = { id: 16, charge: 0, temp: 600, life: 30, group: 0 }; // Poudre explose
+                        if (tid === 4 || tid === 5) { nextGrid[nx][ny] = { id: 16, charge: 0, temp: 300, life: 20, group: 0 }; } // Bois/Plante brûlent
+                        if (tid === 10) nextGrid[nx][ny] = { id: 18, charge: 0, temp: 150, life: 0, group: 0 }; // Pâte -> Gâteau cuit !
+                    }
+                }
+                if (cell.id === 16) {
+                    nextGrid[x][y].life = (cell.life || 20) - 1;
+                    if (nextGrid[x][y].life <= 0) nextGrid[x][y] = { id: 17, charge: 0, temp: 80, life: 15, group: 0 };
+                }
+            }
+
+            // CONTAMINATION GELÉE GRISE
+            if (cell.id === 13) {
+                let targets = [[x+1,y], [x-1,y], [x,y+1], [x,y-1]];
+                for (let [nx, ny] of targets) {
+                    if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+                        if (grid[nx][ny].id !== 0 && grid[nx][ny].id !== 13) {
+                            nextGrid[nx][ny] = { id: 13, charge: 0, temp: cell.temp, life: 0, group: 0 };
+                        }
+                    }
+                }
+            }
+
+            // ACCIDENT NUCLEAIRE (Uranium + Électricité)
+            if (cell.id === 11 && cell.charge > 0) {
+                nextGrid[x][y] = { id: 16, charge: 0, temp: 1000, life: 40, group: 0 };
+                // Explosion atomique radiale
+                for (let i = -5; i <= 5; i++) {
+                    for (let j = -5; j <= 5; j++) {
+                        let nx = x + i, ny = y + j;
+                        if (nx >= 0 && nx < width && ny >= 0 && ny < height && Math.random() < 0.7) {
+                            nextGrid[nx][ny] = { id: 16, charge: 0, temp: 800, life: 30, group: 0 };
+                        }
+                    }
+                }
+                continue;
+            }
+
+            // GESTION DU DÉPÉRISSEMENT DU GAZ / VAPEUR
+            if (cell.id === 17 || cell.id === 9) {
+                if (Math.random() < 0.03) {
+                    nextGrid[x][y] = cell.id === 9 ? { id: 2, charge: 0, temp: 40, life: 0, group: 0 } : { id: 0, charge: 0, temp: ROOM_TEMP, life: 0, group: 0 };
+                    continue;
+                }
+            }
+
+            // --- 4. GESTION DES LOIS DE MOUVEMENT ---
+
+            // COMPORTEMENT DES HUMAINS : MARCHE, TOMBE, COULE OU NAGE (Changelog 1.14)
+            if (prop.type === "human") {
+                let below = (y + 1 < height) ? nextGrid[x][y+1].id : -1;
+                
+                if (below === 2) { // L'Humain sait nager dans l'eau ! (Changelog 1.14)
+                    if (Math.random() < 0.6 && y - 1 >= 0 && nextGrid[x][y-1].id === 0) {
+                        swap(x, y, x, y-1, nextGrid); // Remonte à la surface
+                    } else {
+                        let swimDir = Math.random() < 0.5 ? -1 : 1;
+                        if (x + swimDir >= 0 && x + swimDir < width && nextGrid[x+swimDir][y].id === 2) {
+                            swap(x, y, x+swimDir, y, nextGrid); // Nage horizontalement
+                        }
+                    }
+                } else if (below === 0 || ELEMENTS[below].density < prop.density) {
+                    swap(x, y, x, y+1, nextGrid); // Gravité standard
+                } else {
+                    // Marche sur le sol solide
+                    let walkDir = Math.random() < 0.5 ? -1 : 1;
+                    if (x + walkDir >= 0 && x + walkDir < width && nextGrid[x+walkDir][y].id === 0 && nextGrid[x+walkDir][y+1].id !== 0) {
+                        swap(x, y, x+walkDir, y, nextGrid);
+                    }
+                }
+            }
+
+            // TYPE : POUDRES
+            else if (prop.type === "powder" && cell.group === 0) {
+                if (y + 1 < height) {
+                    let below = nextGrid[x][y+1].id;
+                    if (ELEMENTS[below].density < prop.density) {
+                        swap(x, y, x, y+1, nextGrid);
+                    } else {
+                        let sideX = x + dir;
+                        if (sideX >= 0 && sideX < width && ELEMENTS[nextGrid[sideX][y+1].id].density < prop.density) {
+                            swap(x, y, sideX, y+1, nextGrid);
+                        }
+                    }
+                }
+            }
+
+            // TYPE : LIQUIDES
+            else if (prop.type === "liquid" && cell.group === 0) {
+                if (y + 1 < height) {
+                    let below = nextGrid[x][y+1].id;
+                    if (ELEMENTS[below].density < prop.density) {
+                        swap(x, y, x, y+1, nextGrid);
+                        continue;
+                    } else {
+                        let sideX = x + dir;
+                        if (sideX >= 0 && sideX < width && ELEMENTS[nextGrid[sideX][y+1].id].density < prop.density) {
+                            swap(x, y, sideX, y+1, nextGrid);
+                            continue;
+                        }
+                    }
+                }
+                let sideX = x + dir;
+                if (sideX >= 0 && sideX < width && ELEMENTS[nextGrid[sideX][y].id].density < prop.density) {
+                    swap(x, y, sideX, y, nextGrid);
+                }
+            }
+
+            // TYPE : GAZ
+            else if (prop.type === "gas") {
+                if (y - 1 >= 0) {
+                    let sideX = x + (Math.floor(Math.random() * 3) - 1);
+                    if (sideX >= 0 && sideX < width) {
+                        let above = nextGrid[sideX][y-1].id;
+                        if (ELEMENTS[above].density > prop.density || above === 0) {
+                            swap(x, y, sideX, y-1, nextGrid);
+                        }
+                    }
+                } else {
+                    nextGrid[x][y] = { id: 0, charge: 0, temp: ROOM_TEMP, life: 0, group: 0 };
+                }
+            }
+        }
+    }
+    grid = nextGrid;
+    document.getElementById('statsBar').innerText = `Pxls: ${activePixels} | Ticks: ${ticks} | Temp: ${ROOM_TEMP}°C`;
+}
+
+// --- CONFIGURATION DU RENDU (MÉCANIQUES DE TEXTURES) ---
+function draw() {
+    let imageData = ctx.createImageData(width, height);
+    let d = imageData.data;
+
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            let cell = grid[x][y];
+            let color = [...ELEMENTS[cell.id].color];
+            let idx = (y * width + x) * 4;
+            
+            // Effet visuel d'Électricité (Néon cyan brillant)
+            if (cell.charge > 0) {
+                color = [120, 240, 255];
+            } else if (cell.temp > 60 && cell.id !== 16) {
+                // Modification de la couleur selon la température (Incandescence)
+                color[0] = Math.min(255, color[0] + (cell.temp - ROOM_TEMP) * 0.6);
+            }
+
+            // Texture bruitée
+            if (cell.id !== 0 && cell.id !== 15) {
+                let noise = Math.random() * 10 - 5;
+                color[0] = Math.max(0, Math.min(255, color[0] + noise));
+                color[1] = Math.max(0, Math.min(255, color[1] + noise));
+                color[2] = Math.max(0, Math.min(255, color[2] + noise));
+            }
+
+            d[idx]     = color[0];
+            d[idx + 1] = color[1];
+            d[idx + 2] = color[2];
+            d[idx + 3] = 255;
+        }
+    }
+    ctx.putImageData(imageData, 0, 0);
+}
+
+// --- INTERACTION SMART BRUSH + SHIFT POUR CRÉER DES GROUPES (Changelog 1.13.2) ---
+function addElement(e) {
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = Math.floor((e.clientX - rect.left) / (rect.width / width));
+    const mouseY = Math.floor((e.clientY - rect.top) / (rect.height / height));
+
+    const size = (ELEMENTS[currentElement].type === "solid" || currentElement === 6) ? 1 : 3;
+    
+    // Si la touche SHIFT est enfoncée lors du dessin de solides, on crée une "Relation" (un groupe)
+    let assignGroup = 0;
+    if (e.shiftKey && ELEMENTS[currentElement].type === "solid") {
+        if (isDrawing === true && ticks % 5 === 0) groupCounter++; // Génère un nouvel ID unique de bloc rigide
+        assignGroup = groupCounter;
+    }
+
+    for (let i = -size; i <= size; i++) {
+        for (let j = -size; j <= size; j++) {
+            if (Math.random() > 0.2 || size === 1 || currentElement === 0) {
+                let px = mouseX + i;
+                let py = mouseY + j;
+                if (px >= 0 && px < width && py >= 0 && py < height) {
+                    let initialTemp = (currentElement === 7) ? 200 : ROOM_TEMP;
+                    let initialCharge = (currentElement === 7) ? 5 : 0;
+                    
+                    grid[px][py] = { 
+                        id: currentElement, 
+                        charge: initialCharge, 
+                        temp: initialTemp, 
+                        life: (currentElement === 16) ? 25 : 0,
+                        group: assignGroup 
+                    };
+                }
+            }
+        }
+    }
+}
+
+canvas.addEventListener('mousedown', (e) => { isDrawing = true; addElement(e); });
+window.addEventListener('mouseup', () => isDrawing = false);
+canvas.addEventListener('mousemove', (e) => { if (isDrawing) addElement(e); });
+
+// --- BOUCLE DE JEU ---
+function loop() {
+    updatePhysics();
+    draw();
+    requestAnimationFrame(loop);
+}
+loop();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Glitch Art Studio</title>
+    <style>
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #121212;
+            color: #00ffcc;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        h1 { text-shadow: 2px 2px #ff0055; }
+        .container {
+            background-color: #1e1e1e;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 15px rgba(0, 255, 204, 0.2);
+            text-align: center;
+            max-width: 600px;
+            width: 100%;
+        }
+        .btn-group, .controls { margin: 20px 0; }
+        button, label {
+            background: #222;
+            color: #00ffcc;
+            border: 1px solid #00ffcc;
+            padding: 10px 15px;
+            cursor: pointer;
+            margin: 5px;
+            font-family: inherit;
+            transition: all 0.3s;
+        }
+        button:hover, label:hover {
+            background: #00ffcc;
+            color: #121212;
+            box-shadow: 0 0 10px #00ffcc;
+        }
+        input[type="file"] { display: none; }
+        select {
+            background: #222;
+            color: #ff0055;
+            border: 1px solid #ff0055;
+            padding: 10px;
+            font-family: inherit;
+        }
+        canvas {
+            max-width: 100%;
+            margin-top: 20px;
+            border: 2px dashed #333;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>GLITCH STUDIO</h1>
+        
+        <label for="upload">📁 Importer une image</label>
+        <input type="file" id="upload" accept="image/*">
+
+        <div class="btn-group">
+            <button onclick="applyGlitch('rgb')">🔴🔵 RGB Split (glitch.py)</button>
+            <button onclick="applyGlitch('scanline')">📺 Scanline Shift (decal.py)</button>
+            <button onclick="applyGlitch('sorting')">📊 Pixel Sorting (exit.py)</button>
+        </div>
+
+        <div>
+            <canvas id="canvas"></canvas>
+        </div>
+
+        <div class="controls">
+            <label for="format">Format :</label>
+            <select id="format">
+                <option value="image/png">PNG</option>
+                <option value="image/jpeg">JPEG</option>
+                <option value="image/webp">WEBP</option>
+            </select>
+            <button onclick="downloadImage()">💾 Télécharger</button>
+        </div>
+    </div>
+
+    <script>
+        const upload = document.getElementById('upload');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let originalImage = null;
+
+        // Charger l'image dans le canvas
+        upload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.onload = () => {
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    ctx.drawImage(img, 0, 0);
+                    originalImage = img; // Sauvegarde de l'original pour reset à chaque effet
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // Fonction principale qui redirige vers le bon effet
+        function applyGlitch(type) {
+            if (!originalImage) return alert("Calma ! Importe une image d'abord.");
+            
+            // On remet l'image d'origine avant d'appliquer le filtre
+            ctx.drawImage(originalImage, 0, 0);
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imgData.data;
+            const width = canvas.width;
+            const height = canvas.height;
+
+            if (type === 'rgb') {
+                // --- TRADUCTION DE glitch.py ---
+                const offset = 20;
+                const temp = new Uint8ClampedArray(data);
+                
+                for (let y = 0; y < height; y++) {
+                    for (let x = 0; x < width; x++) {
+                        const idx = (y * width + x) * 4;
+                        
+                        // Décalage Rouge (vers la droite)
+                        const rX = Math.min(width - 1, x + offset);
+                        const rIdx = (y * width + rX) * 4;
+                        data[rIdx] = temp[idx]; 
+
+                        // Décalage Bleu (vers la gauche)
+                        const bX = Math.max(0, x - offset);
+                        const bIdx = (y * width + bX) * 4;
+                        data[bIdx + 2] = temp[idx + 2]; 
+                    }
+                }
+            } 
+            else if (type === 'scanline') {
+                // --- TRADUCTION DE decal.py ---
+                for (let y = 0; y < height; y++) {
+                    if (Math.random() < 0.10) { // 10% de chance
+                        const shift = Math.floor(Math.random() * 101) - 50; // entre -50 et 50
+                        const rowTemp = new Uint8ClampedArray(width * 4);
+                        
+                        // Copie de la ligne actuelle
+                        for (let x = 0; x < width; x++) {
+                            const idx = (y * width + x) * 4;
+                            rowTemp[x * 4] = data[idx];
+                            rowTemp[x * 4 + 1] = data[idx + 1];
+                            rowTemp[x * 4 + 2] = data[idx + 2];
+                            rowTemp[x * 4 + 3] = data[idx + 3];
+                        }
+                        
+                        // Application du shift avec effet de roulement (%)
+                        for (let x = 0; x < width; x++) {
+                            let newX = (x + shift) % width;
+                            if (newX < 0) newX += width;
+                            
+                            const targetIdx = (y * width + newX) * 4;
+                            data[targetIdx] = rowTemp[x * 4];
+                            data[targetIdx + 1] = rowTemp[x * 4 + 1];
+                            data[targetIdx + 2] = rowTemp[x * 4 + 2];
+                            data[targetIdx + 3] = rowTemp[x * 4 + 3];
+                        }
+                    }
+                }
+            } 
+            else if (type === 'sorting') {
+                // --- TRADUCTION DE exit.py ---
+                const threshold = 300;
+
+                for (let y = 0; y < height; y++) {
+                    let row = [];
+                    for (let x = 0; x < width; x++) {
+                        const idx = (y * width + x) * 4;
+                        row.push({
+                            r: data[idx],
+                            g: data[idx + 1],
+                            b: data[idx + 2],
+                            a: data[idx + 3]
+                        });
+                    }
+
+                    // Tri basé sur le seuil de luminosité (R + G + B)
+                    row.sort((p1, p2) => {
+                        const lum1 = p1.r + p1.g + p1.b;
+                        const lum2 = p2.r + p2.g + p2.b;
+                        const val1 = lum1 > threshold ? lum1 : 0;
+                        const val2 = lum2 > threshold ? lum2 : 0;
+                        return val1 - val2;
+                    });
+
+                    // Réinjection dans la ligne
+                    for (let x = 0; x < width; x++) {
+                        const idx = (y * width + x) * 4;
+                        data[idx] = row[x].r;
+                        data[idx + 1] = row[x].g;
+                        data[idx + 2] = row[x].b;
+                        data[idx + 3] = row[x].a;
+                    }
+                }
+            }
+
+            // Applique les modifications sur le canvas
+            ctx.putImageData(imgData, 0, 0);
+        }
+
+        // Fonction pour télécharger l'image avec l'extension choisie
+        function downloadImage() {
+            if (!originalImage) return alert("Rien à télécharger !");
+            
+            const formatSelect = document.getElementById('format');
+            const mimeType = formatSelect.value; // ex: image/jpeg
+            const extension = mimeType.split('/')[1]; // ex: jpeg
+
+            const link = document.createElement('a');
+            link.download = `glitch_art.${extension}`;
+            link.href = canvas.toDataURL(mimeType, 0.9); // 0.9 = qualité pour JPEG/WEBP
+            link.click();
+        }
+    </script>
+</body>
+</html>

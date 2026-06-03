@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Le Mauvais Œil</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <script src="https://unpkg.com/ml5@0.12.2/dist/ml5.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #050505;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+    canvas {
+      border: 4px solid #330000;
+      box-shadow: 0 0 30px rgba(255, 0, 0, 0.2);
+    }
+  </style>
+</head>
+<body>
+
+<script>
+let video;
+let faceMesh;
+let predictions = [];
+let targetX, targetY;
+let currentX, currentY;
+
+function setup() {
+  // Crée un canevas carré au centre
+  createCanvas(600, 600);
+  
+  // Initialise la capture de la webcam (cachée par défaut, on ne veut voir que l'œil)
+  video = createCapture(VIDEO);
+  video.size(640, 480);
+  video.hide();
+
+  // Initialise le modèle FaceMesh (détection de visage)
+  faceMesh = ml5.faceMesh(video, modelReady);
+
+  // Écoute les résultats de la détection
+  faceMesh.on("predict", (results) => {
+    predictions = results;
+  });
+
+  // Positions de départ de la pupille (au centre)
+  targetX = width / 2;
+  targetY = height / 2;
+  currentX = width / 2;
+  currentY = height / 2;
+}
+
+function modelReady() {
+  console.log("Le modèle FaceMesh est prêt ! Le Mauvais Œil s'éveille...");
+}
+
+function draw() {
+  background(10, 5, 5); // Fond sombre
+
+  // 1. ANALYSE DE LA POSITION DU VISAGE
+  if (predictions.length > 0) {
+    // On récupère le premier visage détecté
+    let face = predictions[0];
+    
+    // On prend un point central du visage (le nez par exemple, souvent l'index 1)
+    let nose = face.scaledMesh[1]; 
+    
+    // La caméra est inversée (effet miroir), on ajuste le X
+    // On mappe les coordonnées de la caméra (640x480) à la taille de notre canevas (600x600)
+    targetX = map(video.width - nose[0], 0, video.width, 0, width);
+    targetY = map(nose[1], 0, video.height, 0, height);
+  } else {
+    // Si aucun visage n'est détecté, l'œil revient lentement au centre
+    targetX = width / 2;
+    targetY = height / 2;
+  }
+
+  // Amortissement du mouvement (Lerp) pour que l'œil bouge de manière fluide et organique
+  currentX = lerp(currentX, targetX, 0.1);
+  currentY = lerp(currentY, targetY, 0.1);
+
+  // 2. DESSIN DE L'ŒIL DE MONSTRE
+  let eyeCenterX = width / 2;
+  let eyeCenterY = height / 2;
+
+  // Le Blanc de l'œil (Sclérotique stylisée en mode monstre)
+  fill(240, 230, 220);
+  stroke(150, 0, 0);
+  strokeWeight(5);
+  ellipse(eyeCenterX, eyeCenterY, 400, 250);
+
+  // Quelques veines rouges pour le style
+  stroke(200, 0, 0, 100);
+  strokeWeight(2);
+  line(eyeCenterX - 180, eyeCenterY, eyeCenterX - 120, eyeCenterY + 10);
+  line(eyeCenterX + 180, eyeCenterY, eyeCenterX + 120, eyeCenterY - 10);
+
+  // Calculer l'angle et la distance pour que la pupille ne sorte pas de l'œil
+  let angle = atan2(currentY - eyeCenterY, currentX - eyeCenterX);
+  let maxDist = 70; // Limite de déplacement de la pupille
+  let distFromCenter = dist(eyeCenterX, eyeCenterY, currentX, currentY);
+  distFromCenter = constrain(distFromCenter, 0, maxDist);
+
+  // Position finale de la pupille bridée
+  let pupilX = eyeCenterX + cos(angle) * distFromCenter;
+  let pupilY = eyeCenterY + sin(angle) * distFromCenter;
+
+  // L'Iris (Rouge/Orange menaçant)
+  noStroke();
+  fill(200, 50, 0);
+  ellipse(pupilX, pupilY, 140, 140);
+  fill(255, 120, 0);
+  ellipse(pupilX, pupilY, 110, 110);
+
+  // La Pupille (Fendue comme un reptile / démon)
+  fill(0);
+  push();
+  translate(pupilX, pupilY);
+  rotate(PI / 12); // Légère inclinaison mystique
+  ellipse(0, 0, 45, 100); // Forme de fente
+  pop();
+
+  // Reflet de lumière (pour donner de la vie... ou de la malice)
+  fill(255, 255, 255, 200);
+  ellipse(pupilX - 25, pupilY - 25, 20, 20);
+}
+</script>
+
+</body>
+</html>

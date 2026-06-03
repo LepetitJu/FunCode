@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Le Générateur de Constellations Évolutif</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #050510;
+            cursor: crosshair;
+        }
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="sky"></canvas>
+
+    <script>
+        const canvas = document.getElementById('sky');
+        const ctx = canvas.getContext('2d');
+
+        // Adaptation de la taille du canvas
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        const stars = [];
+        const numStars = 120; // Nombre d'étoiles de base
+        const connectionDist = 120; // Distance max pour lier deux étoiles
+        let mouseStar = null; // Stockera l'étoile créée au clic
+
+        // Classe pour gérer chaque étoile
+        class Star {
+            constructor(x, y, isMassive = false) {
+                this.x = x || Math.random() * canvas.width;
+                this.y = y || Math.random() * canvas.height;
+                this.vx = (Math.random() - 0.5) * 0.8; // Vitesse X douce
+                this.vy = (Math.random() - 0.5) * 0.8; // Vitesse Y douce
+                this.radius = isMassive ? 6 : Math.random() * 2 + 1;
+                this.isMassive = isMassive;
+                this.life = isMassive ? 300 : null; // Durée de vie de la super-étoile
+                this.alpha = 1;
+            }
+
+            update() {
+                // Si c'est une super-étoile, elle s'estompe lentement
+                if (this.isMassive) {
+                    this.life--;
+                    this.alpha = Math.max(0, this.life / 300);
+                    // Pulsation légère
+                    this.radius = 5 + Math.sin(Date.now() * 0.01) * 2;
+                } else if (mouseStar && mouseStar.life > 0) {
+                    // Attraction gravitationnelle vers la super-étoile
+                    const dx = mouseStar.x - this.x;
+                    const dy = mouseStar.y - this.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (dist < 400 && dist > 10) {
+                        // Force d'attraction inversement proportionnelle à la distance
+                        const force = (400 - dist) / 5000;
+                        this.vx += (dx / dist) * force;
+                        this.vy += (dy / dist) * force;
+                    }
+                }
+
+                // Application du mouvement
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Friction légère pour éviter que l'attraction ne rende les étoiles folles
+                this.vx *= 0.99;
+                this.vy *= 0.99;
+
+                // Rebond sur les bords (pour les étoiles normales)
+                if (!this.isMassive) {
+                    if (this.x < 0 || this.x > canvas.width) this.vx *= -1;
+                    if (this.y < 0 || this.y > canvas.height) this.vy *= -1;
+                }
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                if (this.isMassive) {
+                    ctx.fillStyle = `rgba(138, 43, 226, ${this.alpha})`; // Violet néon pour la super-étoile
+                    ctx.shadowBlur = 20;
+                    ctx.shadowColor = '#8a2be2';
+                } else {
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                    ctx.shadowBlur = 4;
+                    ctx.shadowColor = '#ffffff';
+                }
+                ctx.fill();
+                ctx.shadowBlur = 0; // Reset du glow pour les lignes
+            }
+        }
+
+        // Initialisation de la galaxie
+        for (let i = 0; i < numStars; i++) {
+            stars.push(new Star());
+        }
+
+        // Interaction au clic : Crée une super-étoile attractive
+        window.addEventListener('mousedown', (e) => {
+            mouseStar = new Star(e.clientX, e.clientY, true);
+            stars.push(mouseStar);
+        });
+
+        // Boucle d'animation principale
+        function animate() {
+            // Arrière-plan avec un léger effet de traînée (fade)
+            ctx.fillStyle = 'rgba(5, 5, 16, 0.2)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Mise à jour et dessin des étoiles
+            for (let i = stars.length - 1; i >= 0; i--) {
+                stars[i].update();
+                stars[i].draw();
+
+                // Supprimer la super-étoile si elle est "morte"
+                if (stars[i].isMassive && stars[i].life <= 0) {
+                    stars.splice(i, 1);
+                    mouseStar = null;
+                }
+            }
+
+            // Algorithme de tracé des constellations (Double boucle imbriquée)
+            for (let i = 0; i < stars.length; i++) {
+                for (let j = i + 1; j < stars.length; j++) {
+                    const dx = stars[i].x - stars[j].x;
+                    const dy = stars[i].y - stars[j].y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    // Si les étoiles sont proches, on dessine un lien
+                    if (distance < connectionDist) {
+                        ctx.beginPath();
+                        ctx.moveTo(stars[i].x, stars[i].y);
+                        ctx.lineTo(stars[j].x, stars[j].y);
+
+                        // L'opacité de la ligne dépend de la proximité des étoiles
+                        const alpha = (1 - (distance / connectionDist)) * 0.4;
+                        
+                        // Si l'une des deux est la super-étoile, le lien brille en violet/bleu
+                        if (stars[i].isMassive || stars[j].isMassive) {
+                            ctx.strokeStyle = `rgba(0, 191, 255, ${alpha * 2})`;
+                            ctx.lineWidth = 2;
+                        } else {
+                            ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+                            ctx.lineWidth = 0.8;
+                        }
+
+                        ctx.stroke();
+                    }
+                }
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+    </script>
+</body>
+</html>

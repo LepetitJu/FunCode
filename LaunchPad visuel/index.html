@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎛️ Le Launchpad Visuel</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: #111;
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            transition: background-color 0.1s ease;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+            font-size: 2rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-align: center;
+            text-shadow: 0 0 10px rgba(255,255,255,0.3);
+            z-index: 10;
+        }
+
+        p {
+            margin-bottom: 30px;
+            color: #888;
+            z-index: 10;
+        }
+
+        /* Grille du Launchpad */
+        .pad-container {
+            display: grid;
+            grid-template-columns: repeat(4, 100px);
+            gap: 15px;
+            z-index: 10;
+        }
+
+        .pad {
+            width: 100px;
+            height: 100px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid #333;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transition: all 0.05s ease;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+
+        .pad span {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .pad small {
+            font-size: 0.8rem;
+            color: #666;
+            text-transform: uppercase;
+            margin-top: 5px;
+        }
+
+        /* Classes d'activation (quand on joue) */
+        .pad.active {
+            transform: scale(0.95);
+            border-color: #fff;
+            box-shadow: 0 0 20px var(--pad-color);
+            background-color: var(--pad-color);
+        }
+
+        /* Onde circulaire */
+        .ripple {
+            position: absolute;
+            border: 4px solid var(--ripple-color);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            animation: rip 0.6s linear forwards;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        @keyframes rip {
+            0% {
+                width: 0px;
+                height: 0px;
+                opacity: 1;
+            }
+            100% {
+                width: 500px;
+                height: 500px;
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🎛️ Launchpad Visuel</h1>
+    <p>Appuie sur les touches de ton clavier (A, Z, E, R, Q, S, D, F)</p>
+
+    <div class="pad-container">
+        <div class="pad" data-key="a" style="--pad-color: #ff0055;"><span>A</span><small>Kick</small></div>
+        <div class="pad" data-key="z" style="--pad-color: #00ffcc;"><span>Z</span><small>Snare</small></div>
+        <div class="pad" data-key="e" style="--pad-color: #ffcc00;"><span>E</span><small>Hi-Hat</small></div>
+        <div class="pad" data-key="r" style="--pad-color: #9900ff;"><span>R</span><small>Clap</small></div>
+        
+        <div class="pad" data-key="q" style="--pad-color: #ff5722;"><span>Q</span><small>Synth A</small></div>
+        <div class="pad" data-key="s" style="--pad-color: #4caf50;"><span>S</span><small>Synth B</small></div>
+        <div class="pad" data-key="d" style="--pad-color: #00bcd4;"><span>D</span><small>Synth C</small></div>
+        <div class="pad" data-key="f" style="--pad-color: #e91e63;"><span>F</span><small>Laser</small></div>
+    </div>
+
+    <script>
+        // Création d'un synthétiseur simple avec l'Audio API pour éviter de charger des fichiers externes
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        // Configuration des sons pour chaque touche
+        const sounds = {
+            a: { type: 'sine', freq: 60, duration: 0.3, label: 'Kick' },
+            z: { type: 'triangle', freq: 180, duration: 0.15, label: 'Snare' },
+            e: { type: 'triangle', freq: 800, duration: 0.05, label: 'Hi-Hat' },
+            r: { type: 'sawtooth', freq: 220, duration: 0.2, label: 'Clap' },
+            q: { type: 'sine', freq: 261.63, duration: 0.4, label: 'Do' }, // Note C4
+            s: { type: 'sine', freq: 329.63, duration: 0.4, label: 'Mi' }, // Note E4
+            d: { type: 'sine', freq: 392.00, duration: 0.4, label: 'Sol' }, // Note G4
+            f: { type: 'sawtooth', freq: 600, duration: 0.5, sweep: true, label: 'Laser' }
+        };
+
+        // Fonction pour générer le son à la volée
+        function playSound(sound) {
+            if (!sound) return;
+            
+            // Reprendre le contexte audio si le navigateur l'avait bloqué (sécurité)
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+
+            osc.type = sound.type;
+            
+            if (sound.sweep) {
+                // Effet laser : la fréquence chute rapidement
+                osc.frequency.setValueAtTime(sound.freq, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + sound.duration);
+            } else {
+                osc.frequency.setValueAtTime(sound.freq, audioCtx.currentTime);
+            }
+
+            // Gestion du volume (fade out pour éviter les clics audio)
+            gainNode.gain.setValueAtTime(0.4, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + sound.duration);
+
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            osc.start();
+            osc.stop(audioCtx.currentTime + sound.duration);
+        }
+
+        // Fonction pour déclencher les effets visuels et le son
+        function triggerPad(key) {
+            const cleanKey = key.toLowerCase();
+            const pad = document.querySelector(`.pad[data-key="${cleanKey}"]`);
+            const sound = sounds[cleanKey];
+
+            if (!pad || !sound) return;
+
+            // 1. Jouer le son
+            playSound(sound);
+
+            // 2. Effet visuel sur le Pad
+            pad.classList.add('active');
+            setTimeout(() => pad.classList.remove('active'), 100);
+
+            // 3. Flash du fond d'écran (couleur pastel/flash tirée du pad)
+            const color = pad.style.getPropertyValue('--pad-color');
+            document.body.style.backgroundColor = color + "33"; // Ajoute de la transparence en hexa
+            setTimeout(() => {
+                document.body.style.backgroundColor = '#111';
+            }, 150);
+
+            // 4. Générer l'onde circulaire
+            createRipple(color);
+        }
+
+        // Création de l'onde au centre de l'écran (ou aléatoire)
+        function createRipple(color) {
+            const ripple = document.createElement('div');
+            ripple.classList.add('ripple');
+            
+            // Positionnement aléatoire pour plus de dynamisme
+            const randomX = Math.random() * window.innerWidth;
+            const randomY = Math.random() * window.innerHeight;
+            
+            ripple.style.left = `${randomX}px`;
+            ripple.style.top = `${randomY}px`;
+            ripple.style.setProperty('--ripple-color', color);
+
+            document.body.appendChild(ripple);
+
+            // Nettoyage du DOM après l'animation
+            setTimeout(() => {
+                ripple.remove();
+            }, 600);
+        }
+
+        // --- ÉCOUTEURS D'ÉVÉNEMENTS ---
+
+        // Déclencheur Clavier
+        window.addEventListener('keydown', (e) => {
+            // Évite de spammer si la touche reste enfoncée
+            if (e.repeat) return; 
+            triggerPad(e.key);
+        });
+
+        // Déclencheur Souris/Tactile (pour pouvoir aussi cliquer sur les pads)
+        document.querySelectorAll('.pad').forEach(pad => {
+            pad.addEventListener('click', () => {
+                const key = pad.getAttribute('data-key');
+                triggerPad(key);
+            });
+        });
+    </script>
+</body>
+</html>
